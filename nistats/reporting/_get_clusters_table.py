@@ -89,7 +89,7 @@ def _get_val(row, input_arr):
 
 
 def get_clusters_table(stat_img, stat_threshold, cluster_threshold=None,
-                       min_distance=8., clust_mass=True):
+                       min_distance=8., table_clust_mass=True):
     """Creates pandas dataframe with img cluster statistics.
 
     Parameters
@@ -159,7 +159,7 @@ def get_clusters_table(stat_img, stat_threshold, cluster_threshold=None,
     clust_mass = np.array(
         [np.sum(stat_map * (label_map == c)) for c in clust_ids])
     rows = []
-    if clust_mass:
+    if table_clust_mass:
         clust_ids = [clust_ids[c] for c in
                      (-clust_mass).argsort()]  # Sort by descending max value
         cols = ['Cluster ID', 'Cluster Mass (sum)', 'Cluster Size (mm3)']
