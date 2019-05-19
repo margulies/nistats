@@ -42,7 +42,6 @@ def _local_max(data, affine, min_distance):
     ijk, vals = _pare_subpeaks(xyz, ijk, vals, min_distance)
     return ijk, vals
 
-
 def _identify_subpeaks(data):
     # Initial identification of subpeaks with minimal minimum distance
     data_max = ndimage.filters.maximum_filter(data, 3)
@@ -90,7 +89,7 @@ def _get_val(row, input_arr):
 
 
 def get_clusters_table(stat_img, stat_threshold, cluster_threshold=None,
-                       min_distance=8.):
+                       min_distance=8., clust_mass=True):
     """Creates pandas dataframe with img cluster statistics.
 
     Parameters
@@ -115,7 +114,7 @@ def get_clusters_table(stat_img, stat_threshold, cluster_threshold=None,
         clusters (clusters with >1 voxel containing only one value), the table
         reports the center of mass of the cluster, rather than any peaks/subpeaks.
     """
-    cols = ['Cluster ID', 'X', 'Y', 'Z', 'Peak Stat', 'Cluster Mass (sum)', 'Cluster Size (mm3)']
+    cols = ['Cluster ID', 'X', 'Y', 'Z', 'Peak Stat', 'Cluster Size (mm3)']
     stat_map = stat_img.get_data()
     conn_mat = np.zeros((3, 3, 3), int)  # 6-connectivity, aka NN1 or "faces"
     conn_mat[1, 1, :] = 1
@@ -155,39 +154,51 @@ def get_clusters_table(stat_img, stat_threshold, cluster_threshold=None,
     clust_ids = sorted(list(np.unique(label_map)[1:]))
     peak_vals = np.array(
             [np.max(stat_map * (label_map == c)) for c in clust_ids])
-    clust_mass = np.array(
-            [np.sum(stat_map * (label_map == c)) for c in clust_ids])
     clust_ids = [clust_ids[c] for c in
                  (-peak_vals).argsort()]  # Sort by descending max value
-
+    clust_mass = np.array(
+        [np.sum(stat_map * (label_map == c)) for c in clust_ids])
     rows = []
-    for c_id, c_val in enumerate(clust_ids):
-        cluster_mask = label_map == c_val
-        masked_data = stat_map * cluster_mask
+    if clust_mass:
+        clust_ids = [clust_ids[c] for c in
+                     (-clust_mass).argsort()]  # Sort by descending max value
+        cols = ['Cluster ID', 'Cluster Mass (sum)', 'Cluster Size (mm3)']
 
-        cluster_size_mm = int(np.sum(cluster_mask) * voxel_size)
+        for c_id, c_val in enumerate(clust_ids):
+            cluster_mask = label_map == c_val
+            masked_data = stat_map * cluster_mask
 
-        # Get peaks, subpeaks and associated statistics
-        subpeak_ijk, subpeak_vals = _local_max(masked_data, stat_img.affine,
-                                               min_distance=min_distance)
-        subpeak_xyz = np.asarray(coord_transform(subpeak_ijk[:, 0],
-                                                 subpeak_ijk[:, 1],
-                                                 subpeak_ijk[:, 2],
-                                                 stat_img.affine)).tolist()
-        subpeak_xyz = np.array(subpeak_xyz).T
-
-        # Only report peak and, at most, top 3 subpeaks.
-        n_subpeaks = np.min((len(subpeak_vals), 4))
-        for subpeak in range(n_subpeaks):
-            if subpeak == 0:
-                row = [c_id + 1, subpeak_xyz[subpeak, 0],
-                       subpeak_xyz[subpeak, 1], subpeak_xyz[subpeak, 2],
-                       subpeak_vals[subpeak], clust_mass, cluster_size_mm]
-            else:
-                # Subpeak naming convention is cluster num + letter (1a, 1b, etc.)
-                sp_id = '{0}{1}'.format(c_id + 1, ascii_lowercase[subpeak - 1])
-                row = [sp_id, subpeak_xyz[subpeak, 0], subpeak_xyz[subpeak, 1],
-                       subpeak_xyz[subpeak, 2], subpeak_vals[subpeak], '']
+            cluster_size_mm = int(np.sum(cluster_mask) * voxel_size)
+            row = [c_id + 1, np.sum(masked_data), cluster_size_mm]
             rows += [row]
+    else:
+        for c_id, c_val in enumerate(clust_ids):
+            cluster_mask = label_map == c_val
+            masked_data = stat_map * cluster_mask
+
+            cluster_size_mm = int(np.sum(cluster_mask) * voxel_size)
+
+            # Get peaks, subpeaks and associated statistics
+            subpeak_ijk, subpeak_vals = _local_max(masked_data, stat_img.affine,
+                                                   min_distance=min_distance)
+            subpeak_xyz = np.asarray(coord_transform(subpeak_ijk[:, 0],
+                                                     subpeak_ijk[:, 1],
+                                                     subpeak_ijk[:, 2],
+                                                     stat_img.affine)).tolist()
+            subpeak_xyz = np.array(subpeak_xyz).T
+
+            # Only report peak and, at most, top 3 subpeaks.
+            n_subpeaks = np.min((len(subpeak_vals), 4))
+            for subpeak in range(n_subpeaks):
+                if subpeak == 0:
+                    row = [c_id + 1, subpeak_xyz[subpeak, 0],
+                           subpeak_xyz[subpeak, 1], subpeak_xyz[subpeak, 2],
+                           subpeak_vals[subpeak], clust_mass[subpeak], cluster_size_mm]
+                else:
+                    # Subpeak naming convention is cluster num + letter (1a, 1b, etc.)
+                    sp_id = '{0}{1}'.format(c_id + 1, ascii_lowercase[subpeak - 1])
+                    row = [sp_id, subpeak_xyz[subpeak, 0], subpeak_xyz[subpeak, 1],
+                           subpeak_xyz[subpeak, 2], subpeak_vals[subpeak], '']
+                rows += [row]
     df = pd.DataFrame(columns=cols, data=rows)
     return df
